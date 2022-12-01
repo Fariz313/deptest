@@ -1,0 +1,17 @@
+
+
+loop
+ -  isSync?false
+    -  ispaid:false
+    - callsign
+     - nri-> default null
+     - masa laku
+      - masa terbit
+
+loop semua yang dari json ke db
+ - callsign
+ isSync?false
+  -  ispaid:false
+   - nri-> if null -> default < 9 Math.floor(100000 + Math.random() * 900000).toString() : default.nri
+   - masa laku
+    - masa terbit
