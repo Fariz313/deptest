@@ -247,6 +247,12 @@ export enum MOVE_KADER_STATUS {
   REJECTED = 'REJECTED'
 }
 
+export enum OTP_STATUS {
+  PENDING = "pending",
+  SUCCESS = "success",
+  EXPIRED = "expired"
+}
+
 export enum EXTENDING_STATUS {
   CREATED = 'CREATED',
   UPDATED = 'UPDATED',

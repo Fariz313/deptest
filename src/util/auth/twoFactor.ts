@@ -11,6 +11,11 @@ export default async function twoFactor(
     (req.path === '/app/ping' ||
       req.path === '/app/stellar' ||
       req.path === '/app/m/hook'||
+      req.path === '/user/auth/login' ||
+      req.path === '/user/auth/register' ||
+      req.path === '/user/auth/verifyotp' ||
+      req.path === '/user/auth/updateuserprofile' ||
+      req.path === '/user/auth/me' ||
     req.path === '/user/auth/paymenthook')
   ) {
     next();

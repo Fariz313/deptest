@@ -1,5 +1,5 @@
 import { CONFIG } from '@util/config/config';
-import { APISTATUS, COMMMON, USER_AUTH } from '@util/enum/common';
+import { APISTATUS, COMMMON, OTP_STATUS, USER_AUTH } from '@util/enum/common';
 import { ILooseObject } from '@util/shared/interface/ILooseObject';
 import { IWorkerResponse } from '@util/shared/interface/IWorkerResponse';
 import {
@@ -12,15 +12,19 @@ import {
 import * as jwt from 'jsonwebtoken';
 import { logger } from '@util/logger/logger';
 import { IUser, User } from '@core/model/user';
+import { IOtp, Otp } from '@core/model/otp';
 import QueryProxy from '@core/kernel/cub.storage';
 import axios from 'axios';
 import RootPath from 'app-root-path';
 import { Mailler } from '@util/mailler';
 
 interface IUserCredentialsWorker {
+  authenticateUser(params: any, service?: string): Promise<any>;
+  createNewUser(params: any): Promise<IWorkerResponse>
+  verifyOtp(user: ILooseObject, params: any): Promise<any>
+
   userExtendingRequest(user: string, data: any): Promise<any>;
   getCurrentUserExtendingRequest(user: string): Promise<any>;
-  authenticateUser(params: any, service?: string): Promise<any>;
   authRequestPasswordRecovery(params: any): Promise<any>;
   authRequestChangePassword(userId: string, params: ILooseObject): Promise<any>;
   confirmRequestForgotpasswordRecovery(params: any): Promise<any>;
@@ -30,15 +34,16 @@ interface IUserCredentialsWorker {
 
 class UserCredentialsWorker implements IUserCredentialsWorker {
   qp?: QueryProxy;
-  qpb?: QueryProxy;
-  qpExtendingMemerbship?: QueryProxy;
+  qpOtp?: QueryProxy;
+  qpExtendingMembership?: QueryProxy;
   _worker?: IWorkerResponse = {};
   constructor() {
     this.qp = new QueryProxy(User);
+    this.qpOtp = new QueryProxy(Otp);
   }
   getCurrentUserExtendingRequest(user: string): Promise<any> {
     return new Promise((resolve, reject) => {
-      this.qpExtendingMemerbship
+      this.qpExtendingMembership
         .findAll({ user: user }, { sort: { createdAt: 1 } })
         .then((data: any) => {
           resolve(data);
@@ -53,7 +58,7 @@ class UserCredentialsWorker implements IUserCredentialsWorker {
     userData.user = user;
     userData.uuid = new Date().getTime();
     return new Promise((resolve, reject) => {
-      this.qpExtendingMemerbship
+      this.qpExtendingMembership
         .create(userData)
         .then((data: any) => {
           resolve(data);
@@ -292,7 +297,7 @@ class UserCredentialsWorker implements IUserCredentialsWorker {
       email = params.email;
       password = params.password;
 
-      const u = User.findOne({ callsign: email.toUpperCase() });
+      const u = User.findOne({ email: email.toUpperCase() });
 
       u.then(async (user: IUser) => {
         if (!user) {
@@ -310,7 +315,7 @@ class UserCredentialsWorker implements IUserCredentialsWorker {
               message: USER_AUTH.USER_INVALID_EMAIL_OR_PASSWORD,
               data: {}
             };
-            return reject(this._worker);
+            reject(this._worker);
           }
           if (isMatch) {
             if (service && user.accessService) {
@@ -319,7 +324,7 @@ class UserCredentialsWorker implements IUserCredentialsWorker {
                   message: APISTATUS.STATUS_AUTH_NOT_AUTHORIZED_MESSAGE,
                   data: {}
                 };
-                return reject(this._worker);
+                reject(this._worker);
               }
               this._worker = {
                 message: `${USER_AUTH.USER_SUCCESS_AUTHENTICATE} sebagai ${email}`,
@@ -356,11 +361,94 @@ class UserCredentialsWorker implements IUserCredentialsWorker {
     });
   }
   createNewUser(params: any): Promise<any> {
-    return new Promise(async (resolve, reject) => {
-      let user = (await this.qp.create(params)) as IUser;
-      resolve(user);
-    });
+    return new Promise((resolve, reject) => {
+      this.qp.findOne({ email: params.email }, {}).then((data: any) => {
+        if (data && data.isCompletingProfile) {
+          this._worker = {
+            message: USER_AUTH.USER_NOT_ALLOWED_TO_REGISTER,
+            data: {}
+          };
+          return resolve(this._worker)
+        }
+        if(!data){
+          this.qp.create({email: params.email, password:params.password})
+          .then((user)=>{
+            const otpToken = Math.floor(1000 + Math.random() * 9000);
+            this.qpOtp.update({user_id:user._id}, {user_id: user._id, otp: otpToken}, {upsert: true, setDefaultsOnInsert: true})
+            .then((_) => {
+              const mailler = new Mailler();
+              console.log("OTP", otpToken)
+              // mailler.sendMail(params.email, otpToken.toString())
+              console.log("User id", user._id)
+
+              let token = jwt.sign({ _id: user._id }, CONFIG.JWT_SECRET_SIGN) 
+              this._worker = {
+                message: USER_AUTH.USER_ALLOWED_TO_REGISTER_PHASE_CHECK,
+                data:{
+                  token: token
+                }
+              };
+              console.log("Token", token)
+              resolve(this._worker)
+            }, (_error) => reject(_error))
+          }, (_error) => reject(_error))
+        }else{
+          this.qp.update({_id: data._id}, {email: params.email, password:params.password}, {upsert: true, setDefaultsOnInsert:true, isNew:true})
+          .then((user)=>{
+            const otpToken = Math.floor(1000 + Math.random() * 9000);
+            this.qpOtp.update({user_id:data._id}, {user_id: data._id, otp: otpToken}, {upsert: true, setDefaultsOnInsert: true}).then((_) => {
+              const mailler = new Mailler();
+              console.log("OTP", otpToken)
+              // mailler.sendMail(params.email, otpToken.toString())
+              console.log("User id", data._id)
+
+              let token = jwt.sign({ _id: data._id }, CONFIG.JWT_SECRET_SIGN) 
+              this._worker = {
+                message: USER_AUTH.USER_ALLOWED_TO_REGISTER_PHASE_CHECK,
+                data:{
+                  token: token
+                }
+              };
+              console.log("Token", token)
+              resolve(this._worker)
+            }, (_error) => reject(_error))
+          },(_error) => reject(_error))
+        }
+      }).catch((_error: any) => {
+        this._worker = {
+          message: _error
+        };
+        reject(this._worker);
+      });
+    })
   }
+
+  verifyOtp(user: ILooseObject, params: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.qpOtp.findOne({ user_id: user._id},{}).then((data)=>{
+        if(data && (data.otp).toString() == (params.otp).toString()){
+          let parameters = data
+          parameters.status = OTP_STATUS.SUCCESS
+          this.qpOtp.update({ _id: data._id }, {status:OTP_STATUS.SUCCESS},{})
+          .then((_)=>{
+            this._worker = {
+              message:USER_AUTH.USER_ALLOWED_TO_REGISTER,
+              data: user
+            }
+            resolve(this._worker)
+          },(err) => reject(err))
+        }else{
+          reject(USER_AUTH.USER_OTP_NOT_MATCH)
+        }
+      },(err:any)=> {
+        this._worker = {
+          message:err
+        }
+        reject(err)
+      })
+    })
+  }
+
   updateUser(userId: string, params: ILooseObject): Promise<any> {
     return new Promise((resolve, reject) => {
       let parameters = params;
@@ -370,7 +458,7 @@ class UserCredentialsWorker implements IUserCredentialsWorker {
         .then((data: any) => {
           this.qp
             .findOne({ _id: userId }, {})
-            .then(async (userData: IUser) => {});
+            .then(async (userData: IUser) => { });
           resolve(data);
         })
         .catch((err: any) => {

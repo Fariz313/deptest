@@ -118,7 +118,7 @@ export class QueryProxy implements IRepository {
 
   public async update(data?: any, params?: any, options?: any): Promise<any> {
     const p = new Promise((resolve, reject) => {
-      const q = this.model.update(data, params, options);
+      const q = this.model.updateOne(data, params, options);
       q.exec((err, result) => {
         if (err) {
           logger.info(err);

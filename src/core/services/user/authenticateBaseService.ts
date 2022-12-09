@@ -20,6 +20,11 @@ export class UserAuthenticateService implements IServices {
 
   private initRouter() {
     this.r.post(`${this.path}/login`, this.authenticateUser);
+    this.r.post(`${this.path}/register`, this.createUser);
+    this.r.post(`${this.path}/verifyotp`, tokenized, this.verifyOtp);
+    this.r.post(`${this.path}/updateuserprofile`, tokenized, this.changeUser);
+    this.r.get(`${this.path}/me`, tokenized, this.authMe);
+
     this.r.post(`${this.path}/changepassword`, tokenized, this.changePassword);
     this.r.post(`${this.path}/forgotpassword`, this.forgotPassword);
     this.r.post(
@@ -27,8 +32,6 @@ export class UserAuthenticateService implements IServices {
       this.forgotPasswordConfirm
     );
     this.r.post(`${this.path}/resetpassword`, tokenized, this.resetPassword);
-    this.r.post(`${this.path}/updateuserprofile`, tokenized, this.changeUser);
-    this.r.get(`${this.path}/me`, tokenized, this.authMe);
     this.r.get(`${this.path}/populate`, tokenized, this.populate);
     this.r.get(`${this.path}/regenerate`, tokenized, this.regenerate);
     this.r.get(
@@ -390,6 +393,79 @@ export class UserAuthenticateService implements IServices {
           );
       });
   };
+  private createUser = async (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    this.userAuthBaseWorker
+      .createNewUser(req.body)
+      .then((data) => {
+        res
+          .status(200)
+          .send(
+            new HttpOutput(
+              APISTATUS.SUCCESS,
+              data.message,
+              data.data,
+              null,
+              null,
+              {}
+            )
+          );
+      })
+      .catch((err: any) => {
+        return res
+          .status(422)
+          .send(
+            new HttpOutput(
+              APISTATUS.ERROR,
+              APISTATUS.ERROR,
+              err,
+              null,
+              null,
+              {}
+            )
+          );
+      });
+  }
+
+  private verifyOtp = async (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction) =>{
+      this.userAuthBaseWorker
+      .verifyOtp(req.api.user, req.body)
+      .then((data) => {
+        res
+          .status(200)
+          .send(
+            new HttpOutput(
+              APISTATUS.SUCCESS,
+              data.message,
+              data.data,
+              null,
+              null,
+              {}
+            )
+          );
+      })
+      .catch((err: any) => {
+        return res
+          .status(422)
+          .send(
+            new HttpOutput(
+              APISTATUS.ERROR,
+              APISTATUS.ERROR,
+              err,
+              null,
+              null,
+              {}
+            )
+          );
+      });
+    }
+
   private detailUser = async (
     req: express.Request,
     res: express.Response,
